@@ -1,23 +1,24 @@
-# Use a base Node.js image
+# Use Node.js base image
 FROM node:18
 
-# Create app directory
+# Set working directory
 WORKDIR /app
 
-# Install FFmpeg
+# Install ffmpeg
 RUN apt-get update && apt-get install -y ffmpeg
 
-# Copy package files
+# Copy package.json and install deps
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
 # Copy rest of the app
 COPY . .
 
-# Expose the port your app runs on
+# Create the videos folder during build
+RUN mkdir -p public/videos
+
+# Expose port
 EXPOSE 3000
 
-# Start your server
+# Start the app
 CMD ["node", "index.js"]

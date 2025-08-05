@@ -1,33 +1,49 @@
-const express = require('express');
-const { exec } = require('child_process');
-const path = require('path');
+const express = require("express");
+const bodyParser = require("body-parser");
+const cors = require("cors");
+const { exec } = require("child_process");
+const path = require("path");
+const fs = require("fs");
+
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-const port = process.env.PORT || 3000;
+// Create videos directory if it doesn't exist
+const videosPath = path.join(__dirname, "public/videos");
+fs.mkdirSync(videosPath, { recursive: true });
 
-app.use(express.json());
+app.use(cors());
+app.use(bodyParser.json());
+app.use("/videos", express.static(videosPath));
 
-// Serve static files from "public" folder
-app.use('/videos', express.static(path.join(__dirname, 'public/videos')));
-
-app.post('/run-ffmpeg', (req, res) => {
+app.post("/execute", async (req, res) => {
   const { command } = req.body;
 
-  console.log('Received FFmpeg command:', command);
+  if (!command) {
+    return res.status(400).json({ error: "No command provided." });
+  }
 
   exec(command, (error, stdout, stderr) => {
     if (error) {
-      console.error('FFmpeg error:', stderr);
-      return res.status(500).json({ error: stderr });
+      console.error("FFmpeg error:", stderr);
+      return res.status(500).json({ error: error.message });
     }
-    console.log('FFmpeg output:', stdout);
-    res.json({
-      message: 'Video generated successfully',
-      downloadUrl: 'https://ffmpeg-api-production-aee7.up.railway.app/videos/output.mp4'
-    });
+
+    const outputPath = path.join(videosPath, "output.mp4");
+
+    if (!fs.existsSync(outputPath)) {
+      return res.status(500).json({ error: "Video not found after FFmpeg execution." });
+    }
+
+    // ✅ Send video file directly
+    res.sendFile(outputPath);
   });
 });
 
-app.listen(port, () => {
-  console.log(`FFmpeg API listening on port ${port}`);
+app.get("/", (req, res) => {
+  res.send("FFmpeg API is running ✅");
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });

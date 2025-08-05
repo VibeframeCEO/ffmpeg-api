@@ -11,6 +11,11 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
+
+// 🛠 Ensure the videos folder exists
+fs.mkdirSync(path.join(__dirname, "public/videos"), { recursive: true });
+
+// Serve videos statically
 app.use("/videos", express.static(path.join(__dirname, "public/videos")));
 
 app.post("/execute", async (req, res) => {
@@ -34,7 +39,7 @@ app.post("/execute", async (req, res) => {
       return res.status(500).json({ error: "Video not found after FFmpeg execution." });
     }
 
-    // Send video file as response
+    // Send the video file directly as binary
     res.sendFile(outputPath);
   });
 });
@@ -47,3 +52,4 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+

@@ -7,12 +7,14 @@ const fs = require("fs");
 const multer = require("multer"); // ✅ NEW
 
 const app = express();
+const path = require('path');
+
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(bodyParser.json());
-app.use("/videos", express.static(path.join(__dirname, "public/videos")));
-app.use("/audio", express.static(path.join(__dirname, "public/audio"))); // ✅ Serve audio files too
+app.use('/videos', express.static(path.join(__dirname, 'public/videos')));
+app.use('/audios', express.static(path.join(__dirname, 'public/audios')));
 
 // ✅ Multer config to store uploaded audio
 const storage = multer.diskStorage({
@@ -60,4 +62,8 @@ app.get("/", (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+});
+
+app.get('/test', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'videos', 'BG3.mp4'));
 });

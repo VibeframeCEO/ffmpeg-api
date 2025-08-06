@@ -1,36 +1,40 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const cors = require("cors");
-const { exec } = require("child_process");
-const path = require("path");
-const fs = require("fs");
-const multer = require("multer"); // ✅ NEW
-
-const app = express();
+const express = require('express');
+const cors = require('cors');
 const path = require('path');
 
+const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
+
+// ✅ Serve videos and audios correctly
 app.use('/videos', express.static(path.join(__dirname, 'public/videos')));
 app.use('/audios', express.static(path.join(__dirname, 'public/audios')));
 
-// ✅ Multer config to store uploaded audio
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, "public/audio"),
-  filename: (req, file, cb) => {
-    cb(null, "generated.mp3"); // Overwrite each time
-  },
+// ✅ Test route to verify server is up
+app.get('/', (req, res) => {
+  res.send('✅ FFmpeg API is running on Railway');
 });
 
-const upload = multer({ storage });
-
-// ✅ Upload route
-app.post("/upload-audio", upload.single("audio"), (req, res) => {
-  res.json({ message: "Audio uploaded successfully!" });
+// ✅ Test if video is accessible
+app.get('/test-video', (req, res) => {
+  const filePath = path.join(__dirname, 'public/videos/BG3.mp4');
+  console.log('Sending file from:', filePath);
+  res.sendFile(filePath);
 });
 
+// ✅ Test if audio is accessible
+app.get('/test-audio', (req, res) => {
+  const filePath = path.join(__dirname, 'public/audios/sample.mp3');
+  console.log('Sending file from:', filePath);
+  res.sendFile(filePath);
+});
+
+// 🚀 Start the server
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
 // ✅ FFmpeg execute
 app.post("/execute", async (req, res) => {
   const { command } = req.body;
@@ -53,17 +57,4 @@ app.post("/execute", async (req, res) => {
 
     res.sendFile(outputPath);
   });
-});
-
-// ✅ Home route
-app.get("/", (req, res) => {
-  res.send("✅ FFmpeg API is working.");
-});
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
-
-app.get('/test', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'videos', 'BG3.mp4'));
 });

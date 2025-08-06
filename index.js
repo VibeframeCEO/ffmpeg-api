@@ -1,3 +1,13 @@
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
+// Cloudinary config
+cloudinary.config({
+  cloud_name: 'dvxjzox0t',
+  api_key: '363315973539756',
+  api_secret: 'R6TNXaPIz66XJo3kBDo4wGLs9Lc',
+});
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
@@ -29,9 +39,9 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// ✅ Upload route
 app.post("/upload-audio", upload.single("audio"), (req, res) => {
-  res.json({ message: "Audio uploaded successfully!" });
+  const fileUrl = req.file.path; // This is the direct URL on Cloudinary
+  res.json({ message: "Audio uploaded successfully!", url: fileUrl });
 });
 
 // ✅ FFmpeg execute

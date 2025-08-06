@@ -2,16 +2,14 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const { exec } = require("child_process");
-const path = require("path");
+const path = require("path"); // ✅ KEEP THIS ONE
 const fs = require("fs");
 const multer = require("multer"); // ✅ NEW
 
 const app = express();
-const path = require('path');
 
 // Serve the 'public' folder at /public/*
 app.use('/public', express.static(path.join(__dirname, 'public')));
-
 
 const PORT = process.env.PORT || 3000;
 

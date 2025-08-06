@@ -57,4 +57,18 @@ app.post("/execute", async (req, res) => {
 
     res.sendFile(outputPath);
   });
+<<<<<<< HEAD
 });
+=======
+});
+
+// ✅ Home route
+app.get("/", (req, res) => {
+  res.send("✅ FFmpeg API is working.");
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+>>>>>>> 492145423d61b959a9ca0e09ef83d729663a6ddb

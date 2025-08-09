@@ -1,24 +1,20 @@
-# Use Node.js base image
 FROM node:18
 
-# Set working directory
 WORKDIR /app
 
-# Install ffmpeg
-RUN apt-get update && apt-get install -y ffmpeg
+# Install system deps + ffmpeg + python & pip (for yt-dlp)
+RUN apt-get update && \
+    apt-get install -y ffmpeg python3 python3-pip && \
+    pip3 install --no-cache-dir yt-dlp && \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy package.json and install deps
+# Copy package files & install
 COPY package*.json ./
 RUN npm install
 
-# Copy rest of the app
+# Copy app
 COPY . .
 
-# Create the videos folder during build
-RUN mkdir -p public/videos
-
-# Expose port
 EXPOSE 3000
 
-# Start the app
 CMD ["node", "index.js"]

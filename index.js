@@ -1,109 +1,83 @@
-const express = require("express");
-const bodyParser = require("body-parser");
-const cors = require("cors");
-const { exec } = require("child_process");
-const path = require("path");
-const fs = require("fs");
-const multer = require("multer");
+import express from "express";
+import { exec } from "child_process";
+import ytdl from "ytdl-core";
+import fs from "fs";
+import path from "path";
+import { v2 as cloudinary } from "cloudinary";
+import fetch from "node-fetch";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+app.use(express.json());
 
-app.use(cors());
-app.use(bodyParser.json());
-app.use('/public', express.static(path.join(__dirname, 'public')));
-app.use("/videos", express.static(path.join(__dirname, "public/videos")));
-app.use("/audio", express.static(path.join(__dirname, "public/audio")));
-
-// Multer config (same as before)
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, "public/audio"),
-  filename: (req, file, cb) => {
-    cb(null, "generated.mp3"); // Overwrite each time
-  },
-});
-const upload = multer({ storage });
-app.post("/upload-audio", upload.single("audio"), (req, res) => {
-  res.json({ message: "Audio uploaded successfully!" });
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// helper to run shell command
-function runCmd(cmd, options = { maxBuffer: 1024 * 1024 * 20 }) {
-  return new Promise((resolve, reject) => {
-    exec(cmd, options, (error, stdout, stderr) => {
-      if (error) {
-        return reject({ error, stdout, stderr });
-      }
-      resolve({ stdout, stderr });
-    });
+// Download file from URL
+async function downloadFile(url, filepath) {
+  const res = await fetch(url);
+  const fileStream = fs.createWriteStream(filepath);
+  await new Promise((resolve, reject) => {
+    res.body.pipe(fileStream);
+    res.body.on("error", reject);
+    fileStream.on("finish", resolve);
   });
 }
 
-// helper to download YouTube via yt-dlp into /tmp -> returns local path
-async function downloadYoutube(url) {
-  const ts = Date.now();
-  const base = `/tmp/input-${ts}`;
-  const outTemplate = `${base}.%(ext)s`;
-  // use bestvideo+bestaudio and merge into mp4
-  const cmd = `yt-dlp -f bestvideo+bestaudio --merge-output-format mp4 -o "${outTemplate}" "${url}"`;
-  console.log('Downloading YouTube URL with yt-dlp:', url);
-  await runCmd(cmd);
-  const outPath = `${base}.mp4`;
-  if (!fs.existsSync(outPath)) {
-    throw new Error(`yt-dlp download failed (no output at ${outPath})`);
-  }
-  console.log('Downloaded to:', outPath);
-  return outPath;
-}
-
-app.post("/execute", async (req, res) => {
+app.post("/generate", async (req, res) => {
   try {
-    let { command } = req.body;
-    if (!command) {
-      return res.status(400).json({ error: "No command provided." });
-    }
+    const { youtubeUrl, audioUrl, ffmpegCommand } = req.body;
 
-    // Detect YouTube links (youtube.com or youtu.be) and replace them with local files
-    const ytRegex = /(https?:\/\/(www\.)?(youtube\.com|youtu\.be)[^\s"']+)/g;
-    const matches = [...command.matchAll(ytRegex)];
-    if (matches.length) console.log('YouTube links found:', matches.map(m => m[0]));
+    // Step 1: Download YouTube video locally
+    const ytPath = path.resolve("temp", "youtube.mp4");
+    await new Promise((resolve, reject) => {
+      ytdl(youtubeUrl, { quality: "highestvideo" })
+        .pipe(fs.createWriteStream(ytPath))
+        .on("finish", resolve)
+        .on("error", reject);
+    });
 
-    for (const m of matches) {
-      const url = m[0];
-      const localPath = await downloadYoutube(url); // downloads to /tmp
-      // replace all occurrences of the URL in the command with the local path
-      // escape special regex chars in the URL for safe replace
-      const escapedUrl = url.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const urlRe = new RegExp(escapedUrl, "g");
-      command = command.replace(urlRe, localPath);
-      console.log('Replaced URL with local path:', localPath);
-    }
+    // Step 2: Upload YouTube video to Cloudinary
+    const ytUpload = await cloudinary.uploader.upload(ytPath, {
+      resource_type: "video",
+      folder: "backgrounds",
+    });
+    const cloudBgUrl = ytUpload.secure_url;
 
-    console.log('Final ffmpeg command:', command);
-    // Run ffmpeg (this may take time)
-    await runCmd(command);
+    // Step 3: Replace YouTube link with Cloudinary link in ffmpeg command
+    const finalCmd = ffmpegCommand.replace(youtubeUrl, cloudBgUrl);
 
-    const outputPath = path.join(__dirname, "public/videos/output.mp4");
-    if (!fs.existsSync(outputPath)) {
-      return res.status(500).json({ error: "Video not found after FFmpeg execution." });
-    }
+    // Step 4: Run FFmpeg with modified command
+    const outputPath = path.resolve("public/videos/output.mp4");
+    await new Promise((resolve, reject) => {
+      exec(finalCmd, (error, stdout, stderr) => {
+        if (error) {
+          console.error("FFmpeg error:", stderr);
+          reject(error);
+        } else {
+          resolve();
+        }
+      });
+    });
 
-    res.sendFile(outputPath);
-  } catch (e) {
-    console.error("Execute error:", e);
-    if (e.stderr) {
-      // return ffmpeg/yt-dlp stderr (trim to a reasonable length)
-      return res.status(500).json({ error: e.stderr.toString().slice(0, 2000) });
-    }
-    return res.status(500).json({ error: e.error?.message || e.message || "Unknown error" });
+    // Step 5: Upload final video to Cloudinary
+    const finalUpload = await cloudinary.uploader.upload(outputPath, {
+      resource_type: "video",
+      folder: "final",
+    });
+
+    // Step 6: Return final Cloudinary URL
+    res.json({ finalVideoUrl: finalUpload.secure_url });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-app.get("/", (req, res) => {
-  res.send("✅ FFmpeg API is working.");
-});
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+app.listen(3000, () => {
+  console.log("Server running on port 3000");
 });
 

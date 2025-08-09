@@ -2,21 +2,21 @@ FROM node:18
 
 WORKDIR /app
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install system deps + ffmpeg + python & pip (for yt-dlp)
 RUN apt-get update && \
     apt-get install -y ffmpeg python3 python3-pip && \
     pip3 install --no-cache-dir yt-dlp && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy package files & install
+# Copy package files & install node modules
 COPY package*.json ./
 RUN npm install
 
-# Copy app
+# Copy app files
 COPY . .
 
 EXPOSE 3000
 
 CMD ["node", "index.js"]
-
-RUN pip install yt-dlp

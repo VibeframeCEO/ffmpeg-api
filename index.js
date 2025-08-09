@@ -11,9 +11,9 @@ app.use(express.json());
 
 // Configure Cloudinary
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: "dvxjzox0t",
+  api_key: "363315973539756",
+  api_secret: "R6TNXaPIz66XJo3kBDo4wGLs9Lc",
 });
 
 // Download file from URL

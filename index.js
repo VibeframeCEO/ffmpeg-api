@@ -1,83 +1,69 @@
-import express from "express";
-import { exec } from "child_process";
-import ytdl from "ytdl-core";
-import fs from "fs";
-import path from "path";
-import { v2 as cloudinary } from "cloudinary";
-import fetch from "node-fetch";
+const express = require("express");
+const bodyParser = require("body-parser");
+const cors = require("cors");
+const { exec } = require("child_process");
+const path = require("path"); // ✅ KEEP THIS ONE
+const fs = require("fs");
+const multer = require("multer"); // ✅ NEW
 
 const app = express();
-app.use(express.json());
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: "dvxjzox0t",
-  api_key: "363315973539756",
-  api_secret: "R6TNXaPIz66XJo3kBDo4wGLs9Lc",
+// Serve the 'public' folder at /public/*
+app.use('/public', express.static(path.join(__dirname, 'public')));
+
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(bodyParser.json());
+app.use('/public', express.static('public'));
+app.use("/videos", express.static(path.join(__dirname, "public/videos")));
+app.use("/audio", express.static(path.join(__dirname, "public/audio"))); // ✅ Serve audio files too
+
+// ✅ Multer config to store uploaded audio
+const storage = multer.diskStorage({
+  destination: path.join(__dirname, "public/audio"),
+  filename: (req, file, cb) => {
+    cb(null, "generated.mp3"); // Overwrite each time
+  },
 });
 
-// Download file from URL
-async function downloadFile(url, filepath) {
-  const res = await fetch(url);
-  const fileStream = fs.createWriteStream(filepath);
-  await new Promise((resolve, reject) => {
-    res.body.pipe(fileStream);
-    res.body.on("error", reject);
-    fileStream.on("finish", resolve);
-  });
-}
+const upload = multer({ storage });
 
-app.post("/generate", async (req, res) => {
-  try {
-    const { youtubeUrl, audioUrl, ffmpegCommand } = req.body;
+// ✅ Upload route
+app.post("/upload-audio", upload.single("audio"), (req, res) => {
+  res.json({ message: "Audio uploaded successfully!" });
+});
 
-    // Step 1: Download YouTube video locally
-    const ytPath = path.resolve("temp", "youtube.mp4");
-    await new Promise((resolve, reject) => {
-      ytdl(youtubeUrl, { quality: "highestvideo" })
-        .pipe(fs.createWriteStream(ytPath))
-        .on("finish", resolve)
-        .on("error", reject);
-    });
+// ✅ FFmpeg execute
+app.post("/execute", async (req, res) => {
+  const { command } = req.body;
 
-    // Step 2: Upload YouTube video to Cloudinary
-    const ytUpload = await cloudinary.uploader.upload(ytPath, {
-      resource_type: "video",
-      folder: "backgrounds",
-    });
-    const cloudBgUrl = ytUpload.secure_url;
-
-    // Step 3: Replace YouTube link with Cloudinary link in ffmpeg command
-    const finalCmd = ffmpegCommand.replace(youtubeUrl, cloudBgUrl);
-
-    // Step 4: Run FFmpeg with modified command
-    const outputPath = path.resolve("public/videos/output.mp4");
-    await new Promise((resolve, reject) => {
-      exec(finalCmd, (error, stdout, stderr) => {
-        if (error) {
-          console.error("FFmpeg error:", stderr);
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
-    });
-
-    // Step 5: Upload final video to Cloudinary
-    const finalUpload = await cloudinary.uploader.upload(outputPath, {
-      resource_type: "video",
-      folder: "final",
-    });
-
-    // Step 6: Return final Cloudinary URL
-    res.json({ finalVideoUrl: finalUpload.secure_url });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+  if (!command) {
+    return res.status(400).json({ error: "No command provided." });
   }
+
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      console.error("FFmpeg error:", stderr);
+      return res.status(500).json({ error: error.message });
+    }
+
+    const outputPath = path.join(__dirname, "public/videos/output.mp4");
+
+    if (!fs.existsSync(outputPath)) {
+      return res.status(500).json({ error: "Video not found after FFmpeg execution." });
+    }
+
+    res.sendFile(outputPath);
+  });
 });
 
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+// ✅ Home route
+app.get("/", (req, res) => {
+  res.send("✅ FFmpeg API is working.");
+});
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
 

@@ -5,8 +5,12 @@ WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system deps + ffmpeg + python & pip (for yt-dlp)
+# Install system deps + ffmpeg + python
 RUN apt-get update --fix-missing && \
-    apt-get install -y --no-install-recommends ffmpeg python3 python3-pip python3-yt-dlp && \
+    apt-get install -y --no-install-recommends ffmpeg python3 python3-pip python3-venv && \
+    python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir yt-dlp && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 

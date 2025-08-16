@@ -1,23 +1,27 @@
-FROM node:18
+# Use lightweight Debian image
+FROM debian:bullseye-slim
 
-WORKDIR /app
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install system deps + ffmpeg + python & pip (for yt-dlp)
+# Install system dependencies + ffmpeg + python + pip + venv
 RUN apt-get update --fix-missing && \
-    apt-get install -y --no-install-recommends ffmpeg python3 python3-pip && \
-    pip3 install --no-cache-dir yt-dlp && \
+    apt-get install -y --no-install-recommends \
+    ffmpeg python3 python3-pip python3-venv curl && \
+    python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir yt-dlp && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy package files & install node modules
-COPY package*.json ./
-RUN npm install
+# Add venv to PATH (so we can just call yt-dlp / python normally)
+ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy app files
-COPY . .
+# Set working directory
+WORKDIR /app
 
-EXPOSE 3000
+# Copy app code into container
+COPY . /app
 
-CMD ["node", "index.js"]
+# Expose port (Railway auto-assigns $PORT)
+EXPOSE 8080
+
+# If your server is in /app/app/main.py
+CMD ["python3", "app/main.py"]

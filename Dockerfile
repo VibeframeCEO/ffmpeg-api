@@ -23,5 +23,5 @@ COPY . /app
 # Expose port (Railway auto-assigns $PORT)
 EXPOSE 8080
 
-# Start your FastAPI/Flask/Express/etc server
-CMD ["python3", "main.py"]
+# If your server is in /app/app/main.py
+CMD ["python3", "app/main.py"]

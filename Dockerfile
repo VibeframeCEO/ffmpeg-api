@@ -14,17 +14,17 @@ RUN apt-get update --fix-missing && \
 # Add venv to PATH
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Set working directory to root of project
+# Set working directory inside container
 WORKDIR /app
 
-# Copy everything from local folder into container
-COPY /./app
+# Copy everything from your project folder into container
+COPY . /app
 
 # Debug: list all files to make sure main.py exists
 RUN ls -R /app
 
-# Expose port
+# Expose port (Railway uses $PORT automatically)
 EXPOSE 8080
 
-# Run main.py inside the inner app folder
+# Run your main.py
 CMD ["python3", "/app/app/main.py"]

@@ -11,17 +11,20 @@ RUN apt-get update --fix-missing && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Add venv to PATH (so we can just call yt-dlp / python normally)
+# Add venv to PATH
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Set working directory
+# Set working directory to root of project
 WORKDIR /app
 
-# Copy app code into container
+# Copy everything from local folder into container
 COPY . /app
 
-# Expose port (Railway auto-assigns $PORT)
+# Debug: list all files to make sure main.py exists
+RUN ls -R /app
+
+# Expose port
 EXPOSE 8080
 
-# If your server is in /app/app/main.py
-CMD ["python3", "app/main.py"]
+# Run main.py inside the inner app folder
+CMD ["python3", "./app/main.py"]

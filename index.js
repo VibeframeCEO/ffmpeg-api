@@ -1,69 +1,160 @@
 const express = require("express");
-const bodyParser = require("body-parser");
 const cors = require("cors");
-const { exec } = require("child_process");
-const path = require("path"); // ✅ KEEP THIS ONE
+const path = require("path");
 const fs = require("fs");
-const multer = require("multer"); // ✅ NEW
+const { spawn } = require("child_process");
+const { v4: uuidv4 } = require("uuid");
+
+// Optional Cloudinary upload (set CLOUDINARY_URL env if you want it)
+let cloudinary = null;
+try {
+  cloudinary = require("cloudinary").v2;
+  if (process.env.CLOUDINARY_URL) cloudinary.config(process.env.CLOUDINARY_URL);
+} catch (_) {}
 
 const app = express();
-
-// Serve the 'public' folder at /public/*
-app.use('/public', express.static(path.join(__dirname, 'public')));
-
-const PORT = process.env.PORT || 3000;
-
 app.use(cors());
-app.use(bodyParser.json());
-app.use('/public', express.static('public'));
-app.use("/videos", express.static(path.join(__dirname, "public/videos")));
-app.use("/audio", express.static(path.join(__dirname, "public/audio"))); // ✅ Serve audio files too
+app.use(express.json({ limit: "2mb" }));
 
-// ✅ Multer config to store uploaded audio
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, "public/audio"),
-  filename: (req, file, cb) => {
-    cb(null, "generated.mp3"); // Overwrite each time
-  },
-});
+// Ensure temp dir exists
+const TMP_DIR = "/tmp";
+if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
 
-const upload = multer({ storage });
+function buildDrawtextFilters(chunks = [], opts = {}) {
+  const fontPath = opts.fontPath || "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf";
+  const chunkDuration = typeof opts.chunkDuration === "number" ? opts.chunkDuration : 1.25;
+  const fontSize = typeof opts.fontSize === "number" ? opts.fontSize : 70;
 
-// ✅ Upload route
-app.post("/upload-audio", upload.single("audio"), (req, res) => {
-  res.json({ message: "Audio uploaded successfully!" });
-});
+  const filters = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const text = (chunks[i] || "").trim();
+    if (!text) continue;
+    const start = (i * chunkDuration).toFixed(2);
+    const end = ((i + 1) * chunkDuration).toFixed(2);
 
-// ✅ FFmpeg execute
-app.post("/execute", async (req, res) => {
-  const { command } = req.body;
-
-  if (!command) {
-    return res.status(400).json({ error: "No command provided." });
+    // JSON.stringify protects quotes/escapes for drawtext
+    filters.push(
+      `drawtext=fontfile='${fontPath}':text=${JSON.stringify(text)}:fontcolor=white:fontsize=${fontSize}:x=(w-text_w)/2:y=(h-text_h)/2:enable='between(t\\,${start}\\,${end})'`
+    );
   }
 
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      console.error("FFmpeg error:", stderr);
-      return res.status(500).json({ error: error.message });
+  if (filters.length === 0) return "setpts=PTS-STARTPTS";
+  return `${filters.join(",")},setpts=PTS-STARTPTS`;
+}
+
+function runFfmpeg({
+  inputVideo,
+  inputAudio,
+  filterChain,
+  outPath,
+  threads = 2,
+  crf = 23,
+  preset = "veryfast",
+}) {
+  // Build a safe arg list (spawn, not shell)
+  const args = [
+    "-y",
+    "-i", inputVideo,
+    "-i", inputAudio,
+    "-vf", filterChain,
+    "-map", "0:v",
+    "-map", "1:a",
+    "-c:v", "libx264",
+    "-preset", preset,
+    "-crf", String(crf),
+    "-c:a", "aac",
+    "-shortest",
+    "-max_muxing_queue_size", "1024",
+    "-threads", String(threads),
+    outPath,
+  ];
+
+  return spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
+}
+
+app.post("/execute", async (req, res) => {
+  try {
+    const {
+      // either provide full prebuilt command pieces OR give these:
+      inputVideo,
+      inputAudio,
+      chunks = [],
+      chunkDuration = 1.25,
+      fontSize = 70,
+      fontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+      // performance knobs
+      threads = 2,
+      crf = 23,
+      preset = "veryfast",
+      // if true -> upload to cloudinary instead of streaming binary
+      upload = false,
+      folder = "ffmpeg-api",
+    } = req.body || {};
+
+    if (!inputVideo || !inputAudio) {
+      return res.status(400).json({ error: "inputVideo and inputAudio are required" });
     }
 
-    const timestamp = Date.now();
-    const outputPath = path.join(__dirname, `/tmp/output_${timestamp}.mp4`);
+    const filterChain = buildDrawtextFilters(chunks, { chunkDuration, fontSize, fontPath });
+    const outPath = path.join(TMP_DIR, `${uuidv4()}.mp4`);
 
-    if (!fs.existsSync(outputPath)) {
-      return res.status(500).json({ error: "Video not found after FFmpeg execution." });
-    }
+    const ff = runFfmpeg({
+      inputVideo,
+      inputAudio,
+      filterChain,
+      outPath,
+      threads,
+      crf,
+      preset,
+    });
 
-    res.sendFile(outputPath);
-  });
+    let ffmpegLog = "";
+    ff.stdout.on("data", (d) => (ffmpegLog += d.toString()));
+    ff.stderr.on("data", (d) => (ffmpegLog += d.toString()));
+
+    ff.on("close", async (code) => {
+      if (code !== 0) {
+        return res.status(500).json({ error: "FFmpeg failed", code, log: ffmpegLog });
+      }
+
+      // Upload to Cloudinary if requested
+      if (upload && cloudinary && process.env.CLOUDINARY_URL) {
+        try {
+          const up = await cloudinary.uploader.upload(outPath, {
+            resource_type: "video",
+            folder,
+            overwrite: true,
+          });
+
+          // cleanup local file
+          fs.unlink(outPath, () => {});
+          return res.json({ url: up.secure_url, public_id: up.public_id, bytes: up.bytes });
+        } catch (err) {
+          fs.unlink(outPath, () => {});
+          return res.status(500).json({ error: "Cloudinary upload failed", details: String(err) });
+        }
+      }
+
+      // Otherwise stream the binary MP4
+      res.setHeader("Content-Type", "video/mp4");
+      res.setHeader("Content-Disposition", `inline; filename="output.mp4"`);
+
+      const stream = fs.createReadStream(outPath);
+      stream.on("close", () => fs.unlink(outPath, () => {}));
+      stream.on("error", (e) => {
+        fs.unlink(outPath, () => {});
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Stream error", details: String(e) });
+        }
+      });
+      stream.pipe(res);
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Server error", details: String(err) });
+  }
 });
 
-// ✅ Home route
-app.get("/", (req, res) => {
-  res.send("✅ FFmpeg API is working.");
-});
+app.get("/", (_req, res) => res.send("✅ FFmpeg Node API is running"));
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log(`Server listening on ${PORT}`));

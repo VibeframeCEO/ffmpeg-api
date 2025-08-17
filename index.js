@@ -10,8 +10,8 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json()); // parse JSON requests
 
-// POST /run-fFmpeg -> expects { command }
-app.post("/run-ffmpeg", async (req, res) => {
+// POST /execute -> expects { command, outputPath }
+app.post("/execute", async (req, res) => {
   const { command, outputPath } = req.body;
 
   if (!command || !outputPath) {

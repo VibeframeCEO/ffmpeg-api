@@ -34,11 +34,10 @@ async def execute_command(request: Request):
             text=True
         )
 
-        if result.returncode != 0:
-            return {"error": result.stderr}
+        if result.returncode != 0
 
-        # return the actual video file (binary)
-        return FileResponse(output_file, media_type="video/mp4", filename=filename)
+          result = subprocess.run(command, shell=True, check=True)  # removed capture_output/text
+          return FileResponse(output_file, media_type="video/mp4", filename=filename)
 
     except Exception as e:
         return {"error": str(e)}

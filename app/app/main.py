@@ -25,20 +25,17 @@ async def execute_command(request: Request):
     if output_file not in command:
         command = f"{command} {output_file}"
 
+    # ✅ Ensure FFmpeg overwrites files automatically with -y
+    if "-y" not in command:
+        command = f"{command} -y"
+
     try:
         # run ffmpeg
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True
-        )
+        subprocess.run(command, shell=True, check=True)  # ✅ simplified, auto-raises on error
+        return FileResponse(output_file, media_type="video/mp4", filename=filename)
 
-        if result.returncode != 0
-
-          result = subprocess.run(command, shell=True, check=True)  # removed capture_output/text
-          return FileResponse(output_file, media_type="video/mp4", filename=filename)
+    except subprocess.CalledProcessError as e:
+        return {"error": e.stderr or str(e)}
 
     except Exception as e:
         return {"error": str(e)}
-

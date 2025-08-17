@@ -17,10 +17,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Set working directory inside container
 WORKDIR /app
 
-# Copy everything from your project folder into container
-COPY . /app
+# Copy just the inner "app" folder into container
+COPY app /app
 
-# Debug: list all files to make sure main.py exists
+# Debug: list files
 RUN ls -R /app
 
 # Expose port (Railway uses $PORT automatically)

@@ -47,8 +47,9 @@ app.post("/execute", async (req, res) => {
       console.error("FFmpeg error:", stderr);
       return res.status(500).json({ error: error.message });
     }
+
     const timestamp = Date.now();
-    const outputPath = path.join(__dirname, "/tmp/output_${timestamp}.mp4");
+    const outputPath = path.join(__dirname, `/tmp/output_${timestamp}.mp4`);
 
     if (!fs.existsSync(outputPath)) {
       return res.status(500).json({ error: "Video not found after FFmpeg execution." });
@@ -66,4 +67,3 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-

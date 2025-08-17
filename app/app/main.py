@@ -1,10 +1,12 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse, FileResponse
 import subprocess
 import uuid
 import os
 
 app = FastAPI()
+
+BASE_URL = os.getenv("RAILWAY_STATIC_URL", "http://localhost:8000")  # Railway gives you your domain
 
 @app.get("/")
 def root():
@@ -18,11 +20,12 @@ async def execute_command(request: Request):
     if not command:
         return {"error": "No command provided"}
 
-    # Generate a unique temp file
-    output_file = f"/app/tmp/{uuid.uuid4()}.mp4"
+    # Generate unique file
+    filename = f"{uuid.uuid4()}.mp4"
+    output_file = f"/app/tmp/{filename}"
     os.makedirs("/app/tmp", exist_ok=True)
 
-    # Append output file to command if not already
+    # Append output file if not already in command
     if output_file not in command:
         command = f"{command} {output_file}"
 
@@ -41,8 +44,17 @@ async def execute_command(request: Request):
                 "returncode": result.returncode
             }
 
-        # Return the generated video
-        return FileResponse(output_file, media_type="video/mp4", filename="output.mp4")
+        # Return a URL instead of the file
+        video_url = f"{BASE_URL}/videos/{filename}"
+        return JSONResponse({"url": video_url})
 
     except Exception as e:
         return {"error": str(e)}
+
+# Route to serve generated videos
+@app.get("/videos/{filename}")
+async def get_video(filename: str):
+    filepath = f"/app/tmp/{filename}"
+    if os.path.exists(filepath):
+        return FileResponse(filepath, media_type="video/mp4", filename=filename)
+    return {"error": "File not found"}

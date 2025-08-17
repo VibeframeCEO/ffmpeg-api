@@ -29,6 +29,36 @@ async def execute_command(request: Request):
     if not command:
         return {"error": "No command provided"}
 
+    # Generate unique file
+    filename = f"{uuid.uuid4()}.mp4"
+    output_file = os.path.join(TMP_DIR, filename)
+
+    # Append output file if not already in command
+    if output_file not in command:
+        command = f"{command} {output_file}"
+
+    try:
+        # Run ffmpeg
+        result = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            return {
+                "error": result.stderr,
+                "returncode": result.returncode
+            }
+
+        # 👉 Return the actual video binary stream
+        return FileResponse(output_file, media_type="video/mp4", filename=filename)
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/videos/{filename}")
 async def get_video(filename: str):
     filepath = os.path.join(TMP_DIR, filename)

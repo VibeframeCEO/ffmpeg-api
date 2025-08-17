@@ -18,7 +18,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 
 # Copy everything from local folder into container
-COPY . /app
+COPY /app
 
 # Debug: list all files to make sure main.py exists
 RUN ls -R /app

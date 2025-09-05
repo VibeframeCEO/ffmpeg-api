@@ -50,11 +50,13 @@ app.post("/execute", (req, res) => {
     return res.status(500).json({ error: "Failed to start ffmpeg", details: String(err) });
   });
 
-  child.on("close", async (code) => {
-    if (code !== 0) {
-      console.error("❌ ffmpeg exit code:", code);
-      return res.status(500).json({ error: "ffmpeg failed", details: stderr });
-    }
+child.on("close", async (code) => {
+  console.error("🔴 FFmpeg closed with code:", code);
+  console.error("🔴 stderr log:\n", stderr);
+
+  if (code !== 0) {
+    return res.status(500).json({ error: "ffmpeg failed", details: stderr });
+  }
 
     // stream the file back as binary
     try {

@@ -1,69 +1,89 @@
 const express = require("express");
-const bodyParser = require("body-parser");
 const cors = require("cors");
-const { exec } = require("child_process");
-const path = require("path"); // ✅ KEEP THIS ONE
+const { spawn } = require("child_process");
 const fs = require("fs");
-const multer = require("multer"); // ✅ NEW
+const path = require("path");
 
 const app = express();
-
-// Serve the 'public' folder at /public/*
-app.use('/public', express.static(path.join(__dirname, 'public')));
-
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 app.use(cors());
-app.use(bodyParser.json());
-app.use('/public', express.static('public'));
-app.use("/videos", express.static(path.join(__dirname, "public/videos")));
-app.use("/audio", express.static(path.join(__dirname, "public/audio"))); // ✅ Serve audio files too
+app.use(express.json({ limit: "10mb" }));
 
-// ✅ Multer config to store uploaded audio
-const storage = multer.diskStorage({
-  destination: path.join(__dirname, "public/audio"),
-  filename: (req, file, cb) => {
-    cb(null, "generated.mp3"); // Overwrite each time
-  },
-});
+function extractOutputPath(cmd) {
+  // try last "quoted.mp4"
+  let m = cmd.match(/"([^"]+\.mp4)"\s*$/);
+  if (m && m[1]) return m[1];
+  // try last unquoted .mp4 token
+  m = cmd.match(/(\S+\.mp4)\s*$/);
+  if (m && m[1]) return m[1];
+  return null;
+}
 
-const upload = multer({ storage });
+// Healthcheck
+app.get("/", (_req, res) => res.send("✅ FFmpeg API up"));
 
-// ✅ Upload route
-app.post("/upload-audio", upload.single("audio"), (req, res) => {
-  res.json({ message: "Audio uploaded successfully!" });
-});
-
-// ✅ FFmpeg execute
-app.post("/execute", async (req, res) => {
-  const { command } = req.body;
-
-  if (!command) {
-    return res.status(400).json({ error: "No command provided." });
+// Main endpoint: POST /execute
+app.post("/execute", (req, res) => {
+  const { command } = req.body || {};
+  if (!command || typeof command !== "string") {
+    return res.status(400).json({ error: "Bad request - please send JSON { command: \"ffmpeg ... /tmp/out.mp4\" }" });
   }
 
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      console.error("FFmpeg error:", stderr);
-      return res.status(500).json({ error: error.message });
-    }
-    const timestamp = Date.now();
-    const outputPath = path.join(__dirname, "/tmp/output_${timestamp}.mp4");
+  const outputPath = extractOutputPath(command);
+  if (!outputPath) {
+    return res.status(400).json({ error: "Could not find output .mp4 path at the end of your command" });
+  }
 
-    if (!fs.existsSync(outputPath)) {
-      return res.status(500).json({ error: "Video not found after FFmpeg execution." });
-    }
+  console.log("🎬 Running FFmpeg:\n", command);
+  const child = spawn(command, { shell: true });
 
-    res.sendFile(outputPath);
+  let stderr = "";
+  child.stderr.on("data", (d) => {
+    const text = d.toString();
+    // keep only the last ~12KB to avoid memory blow-up
+    stderr = (stderr + text).slice(-12 * 1024);
+  });
+
+  child.on("error", (err) => {
+    console.error("❌ spawn error:", err);
+    return res.status(500).json({ error: "Failed to start ffmpeg", details: String(err) });
+  });
+
+child.on("close", async (code) => {
+  console.error("🔴 FFmpeg closed with code:", code);
+  console.error("🔴 stderr log:\n", stderr);
+
+  if (code !== 0) {
+    return res.status(500).json({ error: "ffmpeg failed", details: stderr });
+  }
+
+    // stream the file back as binary
+    try {
+      const abs = path.resolve(outputPath);
+      if (!fs.existsSync(abs)) {
+        return res.status(500).json({ error: "Output file not found after ffmpeg", details: abs });
+      }
+
+      const stat = fs.statSync(abs);
+      res.setHeader("Content-Type", "video/mp4");
+      res.setHeader("Content-Length", stat.size);
+
+      const stream = fs.createReadStream(abs);
+      stream.pipe(res);
+
+      // clean up after sending
+      res.on("finish", () => {
+        fs.unlink(abs, (e) => {
+          if (e) console.warn("⚠️ cleanup failed:", e.message);
+          else console.log("🧹 deleted", abs);
+        });
+      });
+    } catch (e) {
+      console.error("❌ send error:", e);
+      return res.status(500).json({ error: "Failed to stream output", details: String(e) });
+    }
   });
 });
 
-// ✅ Home route
-app.get("/", (req, res) => {
-  res.send("✅ FFmpeg API is working.");
-});
-
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
-
+app.listen(PORT, () => console.log(`🚀 Server listening on ${PORT}`));

@@ -1,33 +1,15 @@
-# Use lightweight Debian image
-FROM debian:bullseye-slim
+FROM node:18-bullseye-slim
 
-# Install system dependencies + ffmpeg + python + pip + venv
-RUN apt-get update --fix-missing && \
-    apt-get install -y --no-install-recommends \
-    ffmpeg python3 python3-pip python3-venv curl && \
-    python3 -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
-    apt-get clean && \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/*
 
-# Add venv to PATH
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Set working directory
 WORKDIR /app
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev || npm install --omit=dev
 
-# Copy dependency list and install
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY . .
 
-# Copy just the app folder
-COPY app /app
-
-# Debug
-RUN ls -R /app
-
-# Expose port
+ENV PORT=8080
 EXPOSE 8080
-
-# Run FastAPI app with uvicorn
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["npm", "start"]
